@@ -338,6 +338,35 @@ class FamdDatabase:
             database=str(self.path),
         )
 
+    def add_blank_log(self, kind: str, event_date: date, responders: str) -> None:
+        if kind not in config.LOG_KINDS:
+            raise ValueError("Log kind must be response or vital.")
+        event_type = config.RESPONSE_TYPES[0] if kind == "response" else config.VITAL_TYPES[0]
+        self.add_log(kind, event_date, "", event_type, responders, "", "")
+
+    def delete_latest_log_for_day(self, kind: str, day: date) -> LogEntry | None:
+        if kind not in config.LOG_KINDS:
+            raise ValueError("Log kind must be response or vital.")
+        row = self.conn.execute(
+            """
+            SELECT * FROM logs
+             WHERE kind = ? AND event_date = ?
+             ORDER BY
+                CASE
+                    WHEN postal = '' AND details = '' AND image_path = '' THEN 0
+                    ELSE 1
+                END,
+                id DESC
+             LIMIT 1
+            """,
+            (kind, day.strftime(config.DATE_FMT)),
+        ).fetchone()
+        if not row:
+            return None
+        entry = self._row_to_log(row)
+        self.delete_log(entry.id)
+        return entry
+
     def list_logs(self, kind: str, start_day: date, end_day: date) -> list[LogEntry]:
         if kind not in config.LOG_KINDS:
             raise ValueError("Log kind must be response or vital.")

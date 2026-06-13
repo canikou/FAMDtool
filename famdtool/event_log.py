@@ -80,6 +80,8 @@ def _ensure_thread() -> None:
 
 
 def _logging_enabled() -> bool:
+    if not config.VERBOSE_EVENT_LOGS:
+        return False
     if os.environ.get("FAMD_DISABLE_EVENT_LOGS") == "1":
         return False
     if _running_under_unittest() and _same_path(config.LOG_DIR, _DEFAULT_LOG_DIR):

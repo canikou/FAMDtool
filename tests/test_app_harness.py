@@ -220,6 +220,45 @@ class DatabaseAndExportHarnessTests(unittest.TestCase):
 
             db.close()
 
+    def test_blank_log_counter_uses_same_log_table_and_can_be_edited_later(self):
+        with TemporaryDirectory() as temp_dir:
+            db = FamdDatabase(Path(temp_dir) / "test.sqlite3")
+
+            db.add_blank_log("response", date(2026, 6, 13), "Yeol")
+            entry = db.list_logs_for_day("response", date(2026, 6, 13))[0]
+
+            self.assertEqual(entry.postal, "")
+            self.assertEqual(entry.event_type, "ROBBERY")
+            self.assertEqual(entry.responders, "Yeol")
+            self.assertEqual(entry.details, "")
+
+            db.update_log(entry.id, date(2026, 6, 13), "8092", "distress", "Yeol", "notes", "")
+            updated = db.get_log(entry.id)
+
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.postal, "8092")
+            self.assertEqual(updated.event_type, "DISTRESS")
+            db.close()
+
+    def test_blank_log_decrement_prefers_blank_rows_and_clamps_at_zero(self):
+        with TemporaryDirectory() as temp_dir:
+            db = FamdDatabase(Path(temp_dir) / "test.sqlite3")
+            db.add_log("response", date(2026, 6, 13), "1000", "ROBBERY", "Yeol", "detailed", "")
+            db.add_blank_log("response", date(2026, 6, 13), "Yeol")
+
+            deleted = db.delete_latest_log_for_day("response", date(2026, 6, 13))
+            remaining = db.list_logs_for_day("response", date(2026, 6, 13))
+
+            self.assertIsNotNone(deleted)
+            self.assertEqual(deleted.postal, "")
+            self.assertEqual(len(remaining), 1)
+            self.assertEqual(remaining[0].postal, "1000")
+
+            db.delete_latest_log_for_day("response", date(2026, 6, 13))
+            self.assertIsNone(db.delete_latest_log_for_day("response", date(2026, 6, 13)))
+            self.assertEqual(db.list_logs_for_day("response", date(2026, 6, 13)), [])
+            db.close()
+
 
 class UserInputEdgeCaseTests(unittest.TestCase):
     def test_parse_user_datetime_accepts_common_time_formats(self):

@@ -11,6 +11,7 @@ from .config import (
     DB_PATH,
     DEFAULT_RESPONDERS,
     EXPORT_DIR,
+    NON_DETAILED_LOGS,
     RESPONSE_TYPES,
     VITAL_TYPES,
 )
@@ -129,31 +130,59 @@ class FamdToolApp(tk.Tk):
             lists, 0, "SAVED SHIFTS", "Edit Shifts", self.open_shift_manager
         )
         self.shift_list.bind("<Double-1>", lambda _event: self.open_shift_manager())
+        response_button_text = "Detailed Off" if NON_DETAILED_LOGS else "Edit Responses"
         self.response_list = self._build_list_section(
-            lists, 2, "ROBBERY/DISTRESS RESPONSES", "Edit Responses", self.open_response_manager
+            lists, 2, "ROBBERY/DISTRESS RESPONSES", response_button_text, self.open_response_manager
         )
         self.response_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("response"))
+        vital_button_text = "Detailed Off" if NON_DETAILED_LOGS else "Edit Vitals"
         self.vital_list = self._build_list_section(
-            lists, 4, "VITALS LOGS", "Edit Vitals", self.open_vital_manager
+            lists, 4, "VITALS LOGS", vital_button_text, self.open_vital_manager
         )
         self.vital_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("vital"))
 
         actions = ttk.Frame(self, padding=(18, 6, 18, 16))
         actions.grid(row=5, column=0, sticky="ew")
-        actions.columnconfigure((0, 1, 2, 3), weight=1)
+        column_count = 6 if NON_DETAILED_LOGS else 4
+        actions.columnconfigure(tuple(range(column_count)), weight=1)
         self.time_button = ttk.Button(
             actions, text="TIME IN", style="Primary.TButton", command=self.toggle_shift
         )
         self.time_button.grid(row=0, column=0, padx=4, sticky="ew")
-        ttk.Button(actions, text="ADD ROBBERY", command=self.add_response).grid(
-            row=0, column=1, padx=4, sticky="ew"
-        )
-        ttk.Button(actions, text="ADD VITALS", command=self.add_vital).grid(
-            row=0, column=2, padx=4, sticky="ew"
-        )
-        ttk.Button(actions, text="EXPORT", command=self.export_week).grid(
-            row=0, column=3, padx=4, sticky="ew"
-        )
+        if NON_DETAILED_LOGS:
+            ttk.Button(
+                actions,
+                text="+ RESPONSE",
+                command=lambda: self.adjust_simple_log("response", 1),
+            ).grid(row=0, column=1, padx=4, sticky="ew")
+            ttk.Button(
+                actions,
+                text="- RESPONSE",
+                command=lambda: self.adjust_simple_log("response", -1),
+            ).grid(row=0, column=2, padx=4, sticky="ew")
+            ttk.Button(
+                actions,
+                text="+ VITAL",
+                command=lambda: self.adjust_simple_log("vital", 1),
+            ).grid(row=0, column=3, padx=4, sticky="ew")
+            ttk.Button(
+                actions,
+                text="- VITAL",
+                command=lambda: self.adjust_simple_log("vital", -1),
+            ).grid(row=0, column=4, padx=4, sticky="ew")
+            ttk.Button(actions, text="EXPORT", command=self.export_week).grid(
+                row=0, column=5, padx=4, sticky="ew"
+            )
+        else:
+            ttk.Button(actions, text="ADD ROBBERY", command=self.add_response).grid(
+                row=0, column=1, padx=4, sticky="ew"
+            )
+            ttk.Button(actions, text="ADD VITALS", command=self.add_vital).grid(
+                row=0, column=2, padx=4, sticky="ew"
+            )
+            ttk.Button(actions, text="EXPORT", command=self.export_week).grid(
+                row=0, column=3, padx=4, sticky="ew"
+            )
 
     def _build_list_section(
         self, parent: ttk.Frame, row: int, label: str, button_text: str, command
@@ -252,15 +281,21 @@ class FamdToolApp(tk.Tk):
 
         self.response_list.delete(0, "end")
         self.response_entries = self.db.list_logs_for_day("response", self.selected_day)
-        for entry in self.response_entries:
-            self.response_list.insert("end", self.log_display_text(entry))
+        if NON_DETAILED_LOGS and self.response_entries:
+            self.response_list.insert("end", f"- Total response logs: {len(self.response_entries)}")
+        else:
+            for entry in self.response_entries:
+                self.response_list.insert("end", self.log_display_text(entry))
         if self.response_list.size() == 0:
             self.response_list.insert("end", "- No responses")
 
         self.vital_list.delete(0, "end")
         self.vital_entries = self.db.list_logs_for_day("vital", self.selected_day)
-        for entry in self.vital_entries:
-            self.vital_list.insert("end", self.log_display_text(entry))
+        if NON_DETAILED_LOGS and self.vital_entries:
+            self.vital_list.insert("end", f"- Total vital logs: {len(self.vital_entries)}")
+        else:
+            for entry in self.vital_entries:
+                self.vital_list.insert("end", self.log_display_text(entry))
         if self.vital_list.size() == 0:
             self.vital_list.insert("end", "- No vitals")
 
@@ -293,10 +328,35 @@ class FamdToolApp(tk.Tk):
         self.refresh()
 
     def add_response(self) -> None:
+        if NON_DETAILED_LOGS:
+            self.adjust_simple_log("response", 1)
+            return
         self.open_log_dialog("response", RESPONSE_TYPES, "Add Response")
 
     def add_vital(self) -> None:
+        if NON_DETAILED_LOGS:
+            self.adjust_simple_log("vital", 1)
+            return
         self.open_log_dialog("vital", VITAL_TYPES, "Add Vitals")
+
+    def adjust_simple_log(self, kind: str, delta: int) -> None:
+        try:
+            if delta > 0:
+                self.db.add_blank_log(kind, self.selected_day, self.get_responder_name())
+            else:
+                self.db.delete_latest_log_for_day(kind, self.selected_day)
+            new_count = len(self.db.list_logs_for_day(kind, self.selected_day))
+        except ValueError as exc:
+            messagebox.showerror("Counter error", str(exc), parent=self)
+            return
+        log_event(
+            "simple_log_counter_button_clicked",
+            kind=kind,
+            selected_day=self.selected_day.strftime(DATE_FMT),
+            delta=delta,
+            new_count=new_count,
+        )
+        self.refresh()
 
     def open_log_dialog(self, kind: str, options: tuple[str, ...], title: str) -> None:
         log_event(
@@ -338,6 +398,13 @@ class FamdToolApp(tk.Tk):
         self.refresh()
 
     def open_response_manager(self) -> None:
+        if NON_DETAILED_LOGS:
+            messagebox.showinfo(
+                "Detailed logs hidden",
+                "Set non_detailed_logs = false in config.cfg to view and edit individual response logs.",
+                parent=self,
+            )
+            return
         log_event("window_opened", window="response_manager", selected_day=self.selected_day.strftime(DATE_FMT))
         LogManager(
             self,
@@ -350,10 +417,19 @@ class FamdToolApp(tk.Tk):
         )
 
     def open_vital_manager(self) -> None:
+        if NON_DETAILED_LOGS:
+            messagebox.showinfo(
+                "Detailed logs hidden",
+                "Set non_detailed_logs = false in config.cfg to view and edit individual vital logs.",
+                parent=self,
+            )
+            return
         log_event("window_opened", window="vital_manager", selected_day=self.selected_day.strftime(DATE_FMT))
         LogManager(self, self.db, self.selected_day, "vital", VITAL_TYPES, "Vitals", self.refresh)
 
     def open_main_log_detail(self, kind: str) -> None:
+        if NON_DETAILED_LOGS:
+            return
         listbox = self.response_list if kind == "response" else self.vital_list
         entries = self.response_entries if kind == "response" else self.vital_entries
         selected = listbox.curselection()
