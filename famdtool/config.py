@@ -17,7 +17,7 @@ CONFIG_PATH = BASE_DIR / "config.cfg"
 _DEFAULT_CONFIG = {
     "app": {
         "title": "FAMD Tool ni Yeol",
-        "version": "1.0.1",
+        "version": "1.1.0",
         "default_responders": "Yeol Bakunawa",
     },
     "paths": {
@@ -32,6 +32,15 @@ _DEFAULT_CONFIG = {
     },
     "workflow": {
         "non_detailed_logs": "true",
+    },
+    "updates": {
+        "enabled": "true",
+        "check_on_startup": "true",
+        "repo": "canikou/FAMDtool",
+        "latest_api_url": "https://api.github.com/repos/canikou/FAMDtool/releases/latest",
+        "asset_pattern": "FAMDTool-v{version}-windows-setup.exe",
+        "silent_install": "true",
+        "installer_args": "/SILENT /NORESTART /CLOSEAPPLICATIONS",
     },
     "types": {
         "response": "ROBBERY,DISTRESS,HEIST",
@@ -81,6 +90,16 @@ ICON_PATH = path_from_config(APP_CONFIG.get("paths", "icon"))
 
 VERBOSE_EVENT_LOGS = APP_CONFIG.getboolean("logging", "verbose_event_logs")
 NON_DETAILED_LOGS = APP_CONFIG.getboolean("workflow", "non_detailed_logs")
+
+UPDATES_ENABLED = APP_CONFIG.getboolean("updates", "enabled")
+UPDATE_CHECK_ON_STARTUP = APP_CONFIG.getboolean("updates", "check_on_startup")
+UPDATE_REPO = APP_CONFIG.get("updates", "repo")
+UPDATE_LATEST_API_URL = APP_CONFIG.get("updates", "latest_api_url")
+UPDATE_ASSET_PATTERN = APP_CONFIG.get("updates", "asset_pattern")
+UPDATE_SILENT_INSTALL = APP_CONFIG.getboolean("updates", "silent_install")
+UPDATE_INSTALLER_ARGS = tuple(
+    item for item in APP_CONFIG.get("updates", "installer_args").split() if item
+)
 
 RESPONSE_TYPES = tuple_from_csv(APP_CONFIG.get("types", "response"))
 VITAL_TYPES = tuple_from_csv(APP_CONFIG.get("types", "vital"))

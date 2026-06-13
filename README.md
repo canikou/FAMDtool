@@ -1,6 +1,6 @@
 # FAMD Tool ni Yeol
 
-Version: 1.0.1
+Version: 1.1.0
 
 Simple Python desktop app for tracking EMS attendance, responses, vitals, and weekly manual attendance exports.
 
@@ -20,6 +20,7 @@ Simple Python desktop app for tracking EMS attendance, responses, vitals, and we
 - History window for opening saved and recent weekly data.
 - Export copies the weekly manual format to clipboard and saves a `.txt` file.
 - Verbose event logs are written asynchronously to `logs/`.
+- Startup update checks can download and run the latest GitHub Release installer.
 
 ## Setup
 
@@ -64,9 +65,12 @@ Output:
 - `dist/FAMDTool/FAMDTool.exe`
 - `dist/FAMDTool/config.cfg`
 - `dist/FAMDTool/assets/FAMDTool.ico`
-- `release/FAMDTool-v1.0.1-windows.zip`
+- `release/FAMDTool-v1.1.0-windows.zip`
+- `release/FAMDTool-v1.1.0-windows-setup.exe`
 
 The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `attachments/`, `exports/`, and `logs/` stay beside the executable. This is intentional for operational deployments where the config may need to be edited without rebuilding the app.
+
+The setup installer is a per-user installer built with Inno Setup. It installs under `%LOCALAPPDATA%\FAMDTool`, preserves an existing `config.cfg`, and creates Start Menu shortcuts without requiring administrator rights.
 
 ## Project Structure
 
@@ -88,7 +92,7 @@ The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `atta
 - `famdtool/app.py` re-exports UI classes for compatibility.
 - `assets/FAMDTool.ico` and `assets/FAMDTool.png` store the app icon.
 - `tools/generate_icon.py` regenerates app icon assets.
-- `famd_tool.spec` and `tools/build_release.ps1` define the Windows executable packaging.
+- `famd_tool.spec`, `packaging/FAMDTool.iss`, and `tools/build_release.ps1` define Windows executable and installer packaging.
 
 ## Test
 
@@ -122,3 +126,38 @@ Edit `config.cfg` before launching the app:
 - Simple mode still writes normal blank log rows, so setting it back to `false` later makes those rows visible and editable.
 - `types.response` and `types.vital`: comma-separated button options for detailed log entry.
 - `paths.icon`: icon file used by the app window.
+- `updates.enabled`: enables/disables startup update checks.
+- `updates.latest_api_url`: GitHub Releases API endpoint used for update metadata.
+- `updates.asset_pattern`: installer asset name pattern. Keep this compatible with release assets, e.g. `FAMDTool-v{version}-windows-setup.exe`.
+
+## Updating And Releases
+
+This app checks GitHub Releases for a newer version on startup. For update checks to work without bundling a private token, the repository or at least the release metadata/assets must be publicly readable. The current updater expects the latest release to include:
+
+- `FAMDTool-vX.Y.Z-windows-setup.exe`
+- `FAMDTool-vX.Y.Z-windows.zip`
+
+Release steps for future agents:
+
+1. Update version values in `config.cfg`, `famdtool/config.py`, `packaging/version_info.txt`, `tools/build_release.ps1`, tests, and README.
+2. Keep the installer asset name compatible with `updates.asset_pattern`.
+3. Run `.\tools\build_release.ps1`.
+4. Launch-test `dist\FAMDTool\FAMDTool.exe`.
+5. Commit, tag `vX.Y.Z`, push, and create a GitHub Release with both the setup exe and portable zip.
+
+Windows installer best practices used here:
+
+- Per-user install under `%LOCALAPPDATA%` to avoid admin rights.
+- Preserve `config.cfg` on upgrades with `onlyifdoesntexist`.
+- Do not package user data files like `famd_data.sqlite3`.
+- Keep app data folders stable beside the installed executable.
+- Embed the app icon in both the exe and installer.
+- Prefer signed installers for wider department deployment.
+
+Linux and macOS release recommendations:
+
+- Build on each target OS in CI; do not cross-build from Windows.
+- Linux: ship an AppImage for portable use, and optionally `.deb`/`.rpm` packages for managed installs.
+- macOS: ship a signed and notarized `.dmg` or `.pkg`; unsigned apps will be blocked or heavily warned by Gatekeeper.
+- Keep the updater platform-aware before enabling it outside Windows; each OS should download a native installer/package asset.
+- Use GitHub Actions matrix builds once release volume grows.

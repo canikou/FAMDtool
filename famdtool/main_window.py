@@ -13,6 +13,8 @@ from .config import (
     EXPORT_DIR,
     ICON_PATH,
     NON_DETAILED_LOGS,
+    UPDATE_CHECK_ON_STARTUP,
+    UPDATES_ENABLED,
     RESPONSE_TYPES,
     VITAL_TYPES,
 )
@@ -26,6 +28,7 @@ from .reports import (
     display_shifts_for_day as report_display_shifts_for_day,
     total_minutes as report_total_minutes,
 )
+from .tasks import run_background
 from .time_utils import (
     format_hours,
     format_short_date,
@@ -34,6 +37,7 @@ from .time_utils import (
     minutes_between,
     week_start_for,
 )
+from .updater import UpdateInfo, check_for_update, download_update, run_installer
 
 
 class FamdToolApp(tk.Tk):
@@ -62,6 +66,8 @@ class FamdToolApp(tk.Tk):
             week_start=self.week_start.strftime(DATE_FMT),
             selected_day=self.selected_day.strftime(DATE_FMT),
         )
+        if UPDATES_ENABLED and UPDATE_CHECK_ON_STARTUP:
+            self.after(1500, self.start_update_check)
 
     def set_window_icon(self) -> None:
         if not ICON_PATH.exists():
@@ -70,6 +76,55 @@ class FamdToolApp(tk.Tk):
             self.iconbitmap(str(ICON_PATH))
         except tk.TclError:
             pass
+
+    def start_update_check(self) -> None:
+        log_event("update_check_started")
+        run_background(self, check_for_update, self.finish_update_check, self.fail_update_check)
+
+    def finish_update_check(self, update: UpdateInfo | None) -> None:
+        if update is None:
+            log_event("update_check_finished", update_available=False)
+            return
+        log_event(
+            "update_check_finished",
+            update_available=True,
+            version=update.version,
+            asset_name=update.asset_name,
+        )
+        should_install = messagebox.askyesno(
+            "Update available",
+            (
+                f"FAMD Tool {update.version} is available.\n\n"
+                "Download and install it now? The app will close after starting the installer."
+            ),
+            parent=self,
+        )
+        if should_install:
+            self.configure(cursor="watch")
+            run_background(
+                self,
+                lambda: self.download_and_run_update(update),
+                self.finish_update_install,
+                self.fail_update_install,
+            )
+
+    def fail_update_check(self, exc: Exception) -> None:
+        log_event("update_check_failed", error=str(exc))
+
+    def download_and_run_update(self, update: UpdateInfo) -> str:
+        installer_path = download_update(update)
+        run_installer(installer_path)
+        return str(installer_path)
+
+    def finish_update_install(self, installer_path: str) -> None:
+        self.configure(cursor="")
+        log_event("update_installer_started", path=installer_path)
+        self.on_close()
+
+    def fail_update_install(self, exc: Exception) -> None:
+        self.configure(cursor="")
+        log_event("update_install_failed", error=str(exc))
+        messagebox.showerror("Update failed", str(exc), parent=self)
 
     def _build_style(self) -> None:
         style = ttk.Style(self)

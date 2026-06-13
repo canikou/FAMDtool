@@ -38,6 +38,13 @@ from famdtool.config import (
     LOG_KINDS,
     NON_DETAILED_LOGS,
     RESPONSE_TYPES,
+    UPDATE_ASSET_PATTERN,
+    UPDATE_CHECK_ON_STARTUP,
+    UPDATE_LATEST_API_URL,
+    UPDATE_REPO,
+    UPDATE_SILENT_INSTALL,
+    UPDATE_INSTALLER_ARGS,
+    UPDATES_ENABLED,
     VERBOSE_EVENT_LOGS,
     VITAL_TYPES,
 )
@@ -66,6 +73,15 @@ from famdtool.time_utils import (
     split_shift_for_view,
     split_shift_segments,
     week_start_for,
+)
+from famdtool.updater import (
+    UpdateInfo,
+    check_for_update,
+    download_update,
+    is_newer_version,
+    run_installer,
+    select_update_asset,
+    version_tuple,
 )
 from famdtool.windowing import main_window_for, place_window_near_main
 
