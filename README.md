@@ -1,6 +1,6 @@
 # FAMD Tool ni Yeol
 
-Version: 1.0.0
+Version: 1.0.1
 
 Simple Python desktop app for tracking EMS attendance, responses, vitals, and weekly manual attendance exports.
 
@@ -63,7 +63,7 @@ Output:
 
 - `dist/FAMDTool/FAMDTool.exe`
 - `dist/FAMDTool/config.cfg`
-- `release/FAMDTool-v1.0.0-windows.zip`
+- `release/FAMDTool-v1.0.1-windows.zip`
 
 The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `attachments/`, `exports/`, and `logs/` stay beside the executable. This is intentional for operational deployments where the config may need to be edited without rebuilding the app.
 

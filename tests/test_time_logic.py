@@ -15,10 +15,10 @@ from famd_tool import (
 
 
 class TimeLogicTests(unittest.TestCase):
-    def test_week_starts_on_monday(self):
+    def test_week_starts_on_sunday(self):
         self.assertEqual(
             week_start_for(datetime(2026, 6, 13).date()).isoformat(),
-            "2026-06-08",
+            "2026-06-07",
         )
 
     def test_formats_zero_and_nonzero_hours(self):

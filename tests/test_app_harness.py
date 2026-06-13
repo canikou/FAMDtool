@@ -43,7 +43,7 @@ class DatabaseAndExportHarnessTests(unittest.TestCase):
 
             day_four = db.list_shifts_for_day(date(2026, 6, 11))
             day_five = db.list_shifts_for_day(date(2026, 6, 12))
-            harness = AppHarness(db, date(2026, 6, 8))
+            harness = AppHarness(db, date(2026, 6, 7))
 
             self.assertEqual(len(day_four), 1)
             self.assertEqual(len(day_five), 1)
@@ -156,10 +156,11 @@ class DatabaseAndExportHarnessTests(unittest.TestCase):
             db.add_shift(datetime(2026, 6, 9, 7, 52), datetime(2026, 6, 9, 9, 13))
             db.add_log("response", date(2026, 6, 9), "8092", "ROBBERY", "Yeol", "", "")
             db.add_log("response", date(2026, 6, 9), "1012", "DISTRESS", "Yeol", "", "")
-            harness = AppHarness(db, date(2026, 6, 8))
+            harness = AppHarness(db, date(2026, 6, 7))
 
             text = harness.export_text()
 
+            self.assertIn("SUNDAY\nDate: 6/7/2026", text)
             self.assertIn("MONDAY\nDate: 6/8/2026\nTime-in: 3:45AM", text)
             self.assertIn("TUESDAY\nDate: 6/9/2026\nTime-in: 2:30AM | 7:52AM", text)
             self.assertIn("Clock-out: 4:20AM | 9:13AM", text)

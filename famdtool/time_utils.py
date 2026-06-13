@@ -69,7 +69,7 @@ def parse_user_datetime(date_text: str, time_text: str) -> datetime:
 
 
 def week_start_for(value: date) -> date:
-    return value - timedelta(days=value.weekday())
+    return value - timedelta(days=(value.weekday() + 1) % 7)
 
 
 def split_shift_segments(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
