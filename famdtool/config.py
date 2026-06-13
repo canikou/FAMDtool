@@ -13,11 +13,12 @@ def app_base_dir() -> Path:
 
 BASE_DIR = app_base_dir()
 CONFIG_PATH = BASE_DIR / "config.cfg"
+APP_BUILD_VERSION = "1.5.2"
 
 _DEFAULT_CONFIG = {
     "app": {
         "title": "FAMD Tool ni Yeol",
-        "version": "1.5.1",
+        "version": APP_BUILD_VERSION,
         "default_responders": "Yeol Bakunawa",
     },
     "paths": {
@@ -58,8 +59,33 @@ def ensure_config_file() -> None:
         parser.write(handle)
 
 
+def repair_config_file(path: Path = CONFIG_PATH) -> bool:
+    parser = configparser.ConfigParser()
+    parser.read(path, encoding="utf-8")
+    changed = False
+
+    for section, values in _DEFAULT_CONFIG.items():
+        if not parser.has_section(section):
+            parser.add_section(section)
+            changed = True
+        for option, default_value in values.items():
+            if not parser.has_option(section, option):
+                parser.set(section, option, default_value)
+                changed = True
+
+    if parser.get("app", "version", fallback="") != APP_BUILD_VERSION:
+        parser.set("app", "version", APP_BUILD_VERSION)
+        changed = True
+
+    if changed:
+        with path.open("w", encoding="utf-8") as handle:
+            parser.write(handle)
+    return changed
+
+
 def load_config() -> configparser.ConfigParser:
     ensure_config_file()
+    repair_config_file()
     parser = configparser.ConfigParser()
     parser.read_dict(_DEFAULT_CONFIG)
     parser.read(CONFIG_PATH, encoding="utf-8")
@@ -79,7 +105,8 @@ def tuple_from_csv(value: str) -> tuple[str, ...]:
 APP_CONFIG = load_config()
 
 APP_TITLE = APP_CONFIG.get("app", "title")
-APP_VERSION = APP_CONFIG.get("app", "version")
+CONFIG_FILE_VERSION = APP_CONFIG.get("app", "version", fallback=APP_BUILD_VERSION)
+APP_VERSION = APP_BUILD_VERSION
 DEFAULT_RESPONDERS = APP_CONFIG.get("app", "default_responders")
 
 DB_PATH = path_from_config(APP_CONFIG.get("paths", "database"))

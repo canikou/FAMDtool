@@ -3,7 +3,7 @@
 #define MyAppExeName "FAMDTool.exe"
 
 #ifndef MyAppVersion
-#define MyAppVersion "1.5.1"
+#define MyAppVersion "1.5.2"
 #endif
 
 [Setup]

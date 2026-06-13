@@ -1,6 +1,6 @@
 # FAMD Tool ni Yeol
 
-Version: 1.5.1
+Version: 1.5.2
 
 Simple Python desktop app for tracking EMS attendance, responses, vitals, and weekly manual attendance exports.
 
@@ -68,8 +68,8 @@ Output:
 - `dist/FAMDTool/FAMDTool.exe`
 - `dist/FAMDTool/config.cfg`
 - `dist/FAMDTool/assets/FAMDTool.ico`
-- `release/FAMDTool-v1.5.1-windows.zip`
-- `release/FAMDTool-v1.5.1-windows-setup.exe`
+- `release/FAMDTool-v1.5.2-windows.zip`
+- `release/FAMDTool-v1.5.2-windows-setup.exe`
 
 The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `attachments/`, `exports/`, and `logs/` stay beside the executable. This is intentional for operational deployments where the config may need to be edited without rebuilding the app.
 
@@ -114,6 +114,7 @@ $env:FAMD_RUN_GUI_TESTS='1'
 
 - Persistent app data is stored in `famd_data.sqlite3`.
 - Runtime settings are stored in `config.cfg`.
+- The app repairs stale `config.cfg` version metadata on startup so preserved configs from older installs do not cause repeated update prompts.
 - Database/config backups exported from History are saved as `FAMD_Backup_YYYYMMDD_HHMMSS_microseconds.zip` in `exports/`.
 - Copied/pasted log images are stored in `attachments/`.
 - Exported attendance text files are saved in `exports/`.
