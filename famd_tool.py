@@ -33,6 +33,7 @@ from famdtool.config import (
     DEFAULT_RESPONDERS,
     DT_FMT,
     EXPORT_DIR,
+    ICON_PATH,
     LOG_DIR,
     LOG_KINDS,
     NON_DETAILED_LOGS,

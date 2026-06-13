@@ -25,6 +25,7 @@ _DEFAULT_CONFIG = {
         "exports": "exports",
         "attachments": "attachments",
         "logs": "logs",
+        "icon": "assets/FAMDTool.ico",
     },
     "logging": {
         "verbose_event_logs": "true",
@@ -76,6 +77,7 @@ DB_PATH = path_from_config(APP_CONFIG.get("paths", "database"))
 EXPORT_DIR = path_from_config(APP_CONFIG.get("paths", "exports"))
 ATTACH_DIR = path_from_config(APP_CONFIG.get("paths", "attachments"))
 LOG_DIR = path_from_config(APP_CONFIG.get("paths", "logs"))
+ICON_PATH = path_from_config(APP_CONFIG.get("paths", "icon"))
 
 VERBOSE_EVENT_LOGS = APP_CONFIG.getboolean("logging", "verbose_event_logs")
 NON_DETAILED_LOGS = APP_CONFIG.getboolean("workflow", "non_detailed_logs")

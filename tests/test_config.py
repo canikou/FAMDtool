@@ -13,6 +13,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(parser.get("app", "title"), "FAMD Tool ni Yeol")
         self.assertEqual(parser.get("app", "version"), "1.0.1")
         self.assertIn("database", parser["paths"])
+        self.assertIn("icon", parser["paths"])
         self.assertIn("verbose_event_logs", parser["logging"])
         self.assertIn("non_detailed_logs", parser["workflow"])
 
@@ -20,6 +21,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIsInstance(config.NON_DETAILED_LOGS, bool)
         self.assertIsInstance(config.VERBOSE_EVENT_LOGS, bool)
         self.assertEqual(config.APP_VERSION, "1.0.1")
+        self.assertTrue(config.ICON_PATH.name.endswith(".ico"))
         self.assertIn("ROBBERY", config.RESPONSE_TYPES)
         self.assertIn("REVIVAL", config.VITAL_TYPES)
 

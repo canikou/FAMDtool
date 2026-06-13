@@ -17,6 +17,7 @@ if (-not (Test-Path $Python)) {
 
 & $Python -m compileall -q (Join-Path $Root "famd_tool.py") (Join-Path $Root "famdtool") (Join-Path $Root "tests")
 & $Python -m unittest discover -s (Join-Path $Root "tests")
+& $Python (Join-Path $Root "tools\generate_icon.py")
 
 foreach ($Path in @((Join-Path $Root "build"), (Join-Path $Root "dist"), $ReleaseDir)) {
     if (Test-Path $Path) {
@@ -28,6 +29,7 @@ foreach ($Path in @((Join-Path $Root "build"), (Join-Path $Root "dist"), $Releas
 
 Copy-Item -LiteralPath (Join-Path $Root "config.cfg") -Destination (Join-Path $DistDir "config.cfg") -Force
 Copy-Item -LiteralPath (Join-Path $Root "README.md") -Destination (Join-Path $DistDir "README.md") -Force
+Copy-Item -LiteralPath (Join-Path $Root "assets") -Destination (Join-Path $DistDir "assets") -Recurse -Force
 
 foreach ($Folder in @("attachments", "exports", "logs")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $DistDir $Folder) | Out-Null

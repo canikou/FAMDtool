@@ -11,6 +11,7 @@ from .config import (
     DB_PATH,
     DEFAULT_RESPONDERS,
     EXPORT_DIR,
+    ICON_PATH,
     NON_DETAILED_LOGS,
     RESPONSE_TYPES,
     VITAL_TYPES,
@@ -39,6 +40,7 @@ class FamdToolApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_TITLE)
+        self.set_window_icon()
         self.geometry("940x760")
         self.minsize(780, 640)
 
@@ -60,6 +62,14 @@ class FamdToolApp(tk.Tk):
             week_start=self.week_start.strftime(DATE_FMT),
             selected_day=self.selected_day.strftime(DATE_FMT),
         )
+
+    def set_window_icon(self) -> None:
+        if not ICON_PATH.exists():
+            return
+        try:
+            self.iconbitmap(str(ICON_PATH))
+        except tk.TclError:
+            pass
 
     def _build_style(self) -> None:
         style = ttk.Style(self)

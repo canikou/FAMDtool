@@ -63,6 +63,7 @@ Output:
 
 - `dist/FAMDTool/FAMDTool.exe`
 - `dist/FAMDTool/config.cfg`
+- `dist/FAMDTool/assets/FAMDTool.ico`
 - `release/FAMDTool-v1.0.1-windows.zip`
 
 The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `attachments/`, `exports/`, and `logs/` stay beside the executable. This is intentional for operational deployments where the config may need to be edited without rebuilding the app.
@@ -85,6 +86,8 @@ The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `atta
 - `famdtool/managers.py` stores shift/log/history manager windows and log detail views.
 - `famdtool/main_window.py` stores the main Tkinter app window and launcher.
 - `famdtool/app.py` re-exports UI classes for compatibility.
+- `assets/FAMDTool.ico` and `assets/FAMDTool.png` store the app icon.
+- `tools/generate_icon.py` regenerates app icon assets.
 - `famd_tool.spec` and `tools/build_release.ps1` define the Windows executable packaging.
 
 ## Test
@@ -118,3 +121,4 @@ Edit `config.cfg` before launching the app:
 - Set `workflow.non_detailed_logs` to `false` for department-workflow style detailed response/vitals capture with postal, type, responders, notes, and attachments.
 - Simple mode still writes normal blank log rows, so setting it back to `false` later makes those rows visible and editable.
 - `types.response` and `types.vital`: comma-separated button options for detailed log entry.
+- `paths.icon`: icon file used by the app window.
