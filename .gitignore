@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+exports/
+attachments/
+logs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -1,0 +1,435 @@
+from __future__ import annotations
+
+from datetime import date, timedelta
+import tkinter as tk
+from tkinter import messagebox, ttk
+
+from .attachments import parse_image_paths
+from .config import (
+    APP_TITLE,
+    DATE_FMT,
+    DB_PATH,
+    DEFAULT_RESPONDERS,
+    EXPORT_DIR,
+    RESPONSE_TYPES,
+    VITAL_TYPES,
+)
+from .database import FamdDatabase
+from .dialogs import LogDialog
+from .event_log import flush_logs, log_event
+from .managers import HistoryWindow, LogDetailWindow, LogManager, ShiftManager
+from .models import LogEntry, Shift
+from .reports import (
+    build_weekly_export_text,
+    display_shifts_for_day as report_display_shifts_for_day,
+    total_minutes as report_total_minutes,
+)
+from .time_utils import (
+    format_hours,
+    format_short_date,
+    format_time,
+    local_now,
+    minutes_between,
+    week_start_for,
+)
+
+
+class FamdToolApp(tk.Tk):
+    def __init__(self) -> None:
+        super().__init__()
+        self.title(APP_TITLE)
+        self.geometry("940x760")
+        self.minsize(780, 640)
+
+        self.db = FamdDatabase(DB_PATH)
+        today = date.today()
+        self.week_start = week_start_for(today)
+        self.selected_day = today
+        self.responder_name_var = tk.StringVar(
+            value=self.db.get_setting("responder_name", DEFAULT_RESPONDERS)
+        )
+        self.refresh_job: str | None = None
+        self._build_style()
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.refresh()
+        log_event(
+            "app_started",
+            database=str(DB_PATH),
+            week_start=self.week_start.strftime(DATE_FMT),
+            selected_day=self.selected_day.strftime(DATE_FMT),
+        )
+
+    def _build_style(self) -> None:
+        style = ttk.Style(self)
+        style.theme_use("clam")
+        style.configure("Title.TLabel", font=("Segoe UI", 20, "bold"))
+        style.configure("Section.TLabel", font=("Segoe UI", 11, "bold"))
+        style.configure("StatusOn.TLabel", foreground="#0a7a35", font=("Segoe UI", 11, "bold"))
+        style.configure("StatusOff.TLabel", foreground="#9b1c1c", font=("Segoe UI", 11, "bold"))
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"))
+        style.configure("Selected.TButton", background="#3f5f8f", foreground="white")
+        style.map(
+            "Selected.TButton",
+            background=[("active", "#344f78"), ("pressed", "#2d4569")],
+            foreground=[("active", "white"), ("pressed", "white")],
+        )
+
+    def _build_ui(self) -> None:
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(4, weight=1)
+
+        header = ttk.Frame(self, padding=(18, 14, 18, 8))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text=APP_TITLE, style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        name_frame = ttk.Frame(header)
+        name_frame.grid(row=0, column=1, sticky="e", padx=(8, 12))
+        ttk.Label(name_frame, text="Name").pack(side="left", padx=(0, 4))
+        name_entry = ttk.Entry(name_frame, textvariable=self.responder_name_var, width=26)
+        name_entry.pack(side="left")
+        name_entry.bind("<FocusOut>", lambda _event: self.save_responder_name())
+        name_entry.bind("<Return>", lambda _event: self.save_responder_name())
+        ttk.Button(header, text="History", command=self.open_history).grid(
+            row=0, column=2, sticky="e", padx=(0, 10)
+        )
+        self.status_label = ttk.Label(header, text="Off Duty", style="StatusOff.TLabel")
+        self.status_label.grid(row=0, column=3, sticky="e")
+
+        totals = ttk.Frame(self, padding=(18, 4, 18, 10))
+        totals.grid(row=1, column=0, sticky="ew")
+        totals.columnconfigure((0, 1), weight=1)
+        self.weekly_var = tk.StringVar()
+        self.daily_var = tk.StringVar()
+        ttk.Label(totals, textvariable=self.weekly_var, justify="left").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(totals, textvariable=self.daily_var, justify="left").grid(
+            row=0, column=1, sticky="w"
+        )
+
+        day_bar = ttk.Frame(self, padding=(18, 4, 18, 10))
+        day_bar.grid(row=2, column=0, sticky="ew")
+        day_bar.columnconfigure(1, weight=1)
+        ttk.Button(day_bar, text="<<", width=5, command=self.previous_day).grid(
+            row=0, column=0, sticky="w"
+        )
+        self.day_label = ttk.Label(day_bar, text="", anchor="center", font=("Segoe UI", 14, "bold"))
+        self.day_label.grid(row=0, column=1, sticky="ew")
+        ttk.Button(day_bar, text=">>", width=5, command=self.next_day).grid(
+            row=0, column=2, sticky="e"
+        )
+
+        lists = ttk.Frame(self, padding=(18, 0, 18, 8))
+        lists.grid(row=4, column=0, sticky="nsew")
+        lists.columnconfigure(0, weight=1)
+        lists.rowconfigure((1, 3, 5), weight=1)
+
+        self.shift_list = self._build_list_section(
+            lists, 0, "SAVED SHIFTS", "Edit Shifts", self.open_shift_manager
+        )
+        self.shift_list.bind("<Double-1>", lambda _event: self.open_shift_manager())
+        self.response_list = self._build_list_section(
+            lists, 2, "ROBBERY/DISTRESS RESPONSES", "Edit Responses", self.open_response_manager
+        )
+        self.response_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("response"))
+        self.vital_list = self._build_list_section(
+            lists, 4, "VITALS LOGS", "Edit Vitals", self.open_vital_manager
+        )
+        self.vital_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("vital"))
+
+        actions = ttk.Frame(self, padding=(18, 6, 18, 16))
+        actions.grid(row=5, column=0, sticky="ew")
+        actions.columnconfigure((0, 1, 2, 3), weight=1)
+        self.time_button = ttk.Button(
+            actions, text="TIME IN", style="Primary.TButton", command=self.toggle_shift
+        )
+        self.time_button.grid(row=0, column=0, padx=4, sticky="ew")
+        ttk.Button(actions, text="ADD ROBBERY", command=self.add_response).grid(
+            row=0, column=1, padx=4, sticky="ew"
+        )
+        ttk.Button(actions, text="ADD VITALS", command=self.add_vital).grid(
+            row=0, column=2, padx=4, sticky="ew"
+        )
+        ttk.Button(actions, text="EXPORT", command=self.export_week).grid(
+            row=0, column=3, padx=4, sticky="ew"
+        )
+
+    def _build_list_section(
+        self, parent: ttk.Frame, row: int, label: str, button_text: str, command
+    ) -> tk.Listbox:
+        heading = ttk.Frame(parent)
+        heading.grid(row=row, column=0, sticky="ew", pady=(8, 3))
+        heading.columnconfigure(0, weight=1)
+        ttk.Label(heading, text=label, style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Button(heading, text=button_text, command=command).grid(row=0, column=1, sticky="e")
+
+        box_frame = ttk.Frame(parent)
+        box_frame.grid(row=row + 1, column=0, sticky="nsew")
+        box_frame.columnconfigure(0, weight=1)
+        box_frame.rowconfigure(0, weight=1)
+        listbox = tk.Listbox(box_frame, height=5, activestyle="none")
+        listbox.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(box_frame, orient="vertical", command=listbox.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        listbox.configure(yscrollcommand=scrollbar.set)
+        return listbox
+
+    def previous_day(self) -> None:
+        index = (self.selected_day - self.week_start).days
+        self.selected_day = self.week_start + timedelta(days=(index - 1) % 7)
+        log_event(
+            "day_selected",
+            direction="previous",
+            selected_day=self.selected_day.strftime(DATE_FMT),
+            week_start=self.week_start.strftime(DATE_FMT),
+        )
+        self.refresh()
+
+    def next_day(self) -> None:
+        index = (self.selected_day - self.week_start).days
+        self.selected_day = self.week_start + timedelta(days=(index + 1) % 7)
+        log_event(
+            "day_selected",
+            direction="next",
+            selected_day=self.selected_day.strftime(DATE_FMT),
+            week_start=self.week_start.strftime(DATE_FMT),
+        )
+        self.refresh()
+
+    def refresh(self) -> None:
+        if self.refresh_job:
+            self.after_cancel(self.refresh_job)
+            self.refresh_job = None
+
+        active = self.db.get_active_shift()
+        is_on_duty = active is not None
+        self.status_label.configure(
+            text="On Duty" if is_on_duty else "Off Duty",
+            style="StatusOn.TLabel" if is_on_duty else "StatusOff.TLabel",
+        )
+        self.time_button.configure(text="TIME OUT" if is_on_duty else "TIME IN")
+
+        week_end = self.week_start + timedelta(days=6)
+        weekly_minutes = self.total_minutes(self.week_start, week_end)
+        weekly_responses = len(self.db.list_logs("response", self.week_start, week_end))
+        weekly_vitals = len(self.db.list_logs("vital", self.week_start, week_end))
+        self.weekly_var.set(
+            "WEEKLY TOTAL:\n"
+            f"  Duty Hours: {format_hours(weekly_minutes)} on Duty\n"
+            f"  Responses: {weekly_responses} Responses\n"
+            f"  Vitals: {weekly_vitals} Logs"
+        )
+
+        daily_minutes = self.total_minutes(self.selected_day, self.selected_day)
+        daily_responses = len(self.db.list_logs_for_day("response", self.selected_day))
+        daily_vitals = len(self.db.list_logs_for_day("vital", self.selected_day))
+        self.daily_var.set(
+            "DAILY TOTAL:\n"
+            f"  Duty Hours: {format_hours(daily_minutes)} on Duty\n"
+            f"  Responses: {daily_responses} Responses\n"
+            f"  Vitals: {daily_vitals} Logs"
+        )
+
+        day_number = (self.selected_day - self.week_start).days + 1
+        self.day_label.configure(
+            text=f"Day {day_number} - {self.selected_day.strftime('%A')}     {format_short_date(self.selected_day)}"
+        )
+        self.populate_lists()
+        self.refresh_job = self.after(30_000, self.refresh)
+
+    def populate_lists(self) -> None:
+        self.shift_list.delete(0, "end")
+        for shift in self.display_shifts_for_day(self.selected_day):
+            end_text = format_time(shift.end) if shift.end else "On Duty"
+            duration_end = shift.end if shift.end else local_now()
+            self.shift_list.insert(
+                "end",
+                f"- {format_time(shift.start)} - {end_text} (TOTAL: {format_hours(minutes_between(shift.start, duration_end))})",
+            )
+        if self.shift_list.size() == 0:
+            self.shift_list.insert("end", "- No saved shifts")
+
+        self.response_list.delete(0, "end")
+        self.response_entries = self.db.list_logs_for_day("response", self.selected_day)
+        for entry in self.response_entries:
+            self.response_list.insert("end", self.log_display_text(entry))
+        if self.response_list.size() == 0:
+            self.response_list.insert("end", "- No responses")
+
+        self.vital_list.delete(0, "end")
+        self.vital_entries = self.db.list_logs_for_day("vital", self.selected_day)
+        for entry in self.vital_entries:
+            self.vital_list.insert("end", self.log_display_text(entry))
+        if self.vital_list.size() == 0:
+            self.vital_list.insert("end", "- No vitals")
+
+    def display_shifts_for_day(self, day: date) -> list[Shift]:
+        return report_display_shifts_for_day(self.db, day)
+
+    def total_minutes(self, start_day: date, end_day: date) -> int:
+        return report_total_minutes(self.db, start_day, end_day)
+
+    def toggle_shift(self) -> None:
+        active = self.db.get_active_shift()
+        now = local_now()
+        log_event(
+            "time_toggle_clicked",
+            active_shift_id=active.id if active else None,
+            timestamp=now.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        try:
+            if active:
+                self.db.close_shift(active.id, active.start, now)
+                messagebox.showinfo("Time out", f"Clocked out at {format_time(now)}.", parent=self)
+            else:
+                self.db.start_shift(now)
+                messagebox.showinfo("Time in", f"Clocked in at {format_time(now)}.", parent=self)
+        except ValueError as exc:
+            log_event("time_toggle_failed", error=str(exc))
+            messagebox.showerror("Shift error", str(exc), parent=self)
+        self.selected_day = now.date()
+        self.week_start = week_start_for(self.selected_day)
+        self.refresh()
+
+    def add_response(self) -> None:
+        self.open_log_dialog("response", RESPONSE_TYPES, "Add Response")
+
+    def add_vital(self) -> None:
+        self.open_log_dialog("vital", VITAL_TYPES, "Add Vitals")
+
+    def open_log_dialog(self, kind: str, options: tuple[str, ...], title: str) -> None:
+        log_event(
+            "log_dialog_requested",
+            kind=kind,
+            selected_day=self.selected_day.strftime(DATE_FMT),
+            title=title,
+        )
+        dialog = LogDialog(
+            self,
+            title,
+            self.selected_day,
+            options,
+            default_responders=self.get_responder_name(),
+        )
+        if dialog.result_data:
+            self.db.add_log(kind, *dialog.result_data)
+            self.refresh()
+
+    def open_shift_manager(self) -> None:
+        log_event("window_opened", window="shift_manager", selected_day=self.selected_day.strftime(DATE_FMT))
+        ShiftManager(self, self.db, self.selected_day, self.refresh)
+
+    def get_responder_name(self) -> str:
+        return self.responder_name_var.get().strip() or DEFAULT_RESPONDERS
+
+    def save_responder_name(self) -> str:
+        self.db.set_setting("responder_name", self.get_responder_name())
+        return "break"
+
+    def open_history(self) -> None:
+        log_event("window_opened", window="history", week_start=self.week_start.strftime(DATE_FMT))
+        HistoryWindow(self, self.db, self.select_week)
+
+    def select_week(self, week_start: date) -> None:
+        self.week_start = week_start
+        self.selected_day = week_start
+        log_event("week_selected", week_start=week_start.strftime(DATE_FMT))
+        self.refresh()
+
+    def open_response_manager(self) -> None:
+        log_event("window_opened", window="response_manager", selected_day=self.selected_day.strftime(DATE_FMT))
+        LogManager(
+            self,
+            self.db,
+            self.selected_day,
+            "response",
+            RESPONSE_TYPES,
+            "Responses",
+            self.refresh,
+        )
+
+    def open_vital_manager(self) -> None:
+        log_event("window_opened", window="vital_manager", selected_day=self.selected_day.strftime(DATE_FMT))
+        LogManager(self, self.db, self.selected_day, "vital", VITAL_TYPES, "Vitals", self.refresh)
+
+    def open_main_log_detail(self, kind: str) -> None:
+        listbox = self.response_list if kind == "response" else self.vital_list
+        entries = self.response_entries if kind == "response" else self.vital_entries
+        selected = listbox.curselection()
+        if not selected or selected[0] >= len(entries):
+            return
+        options = RESPONSE_TYPES if kind == "response" else VITAL_TYPES
+        log_event("log_detail_opened", kind=kind, log_id=entries[selected[0]].id)
+        LogDetailWindow(
+            self,
+            self.db,
+            entries[selected[0]],
+            kind,
+            options,
+            self.refresh,
+            self.refresh,
+            self.get_responder_name,
+        )
+
+    def log_display_text(self, entry: LogEntry) -> str:
+        postal = entry.postal if entry.postal else "N/A"
+        details = f" - {entry.details}" if entry.details else ""
+        image_count = len(parse_image_paths(entry.image_path))
+        image = f" [{image_count} IMG]" if image_count else ""
+        return f"- POSTAL {postal} ({entry.event_type}){details}{image}"
+
+    def export_week(self) -> None:
+        text = self.build_export_text()
+        week_end = self.week_start + timedelta(days=6)
+        try:
+            EXPORT_DIR.mkdir(exist_ok=True)
+            file_path = EXPORT_DIR / (
+                f"FAMD_Attendance_{self.week_start.strftime(DATE_FMT)}_to_{week_end.strftime(DATE_FMT)}.txt"
+            )
+            file_path.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            log_event(
+                "weekly_export_failed",
+                week_start=self.week_start.strftime(DATE_FMT),
+                week_end=week_end.strftime(DATE_FMT),
+                error=str(exc),
+            )
+            messagebox.showerror("Export failed", str(exc), parent=self)
+            return
+
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update()
+        log_event(
+            "weekly_export_completed",
+            week_start=self.week_start.strftime(DATE_FMT),
+            week_end=week_end.strftime(DATE_FMT),
+            file_path=str(file_path),
+            character_count=len(text),
+        )
+        messagebox.showinfo(
+            "Export complete",
+            f"Copied to clipboard and saved to:\n{file_path}",
+            parent=self,
+        )
+
+    def build_export_text(self) -> str:
+        return build_weekly_export_text(self.db, self.week_start)
+
+    def on_close(self) -> None:
+        if self.refresh_job:
+            self.after_cancel(self.refresh_job)
+            self.refresh_job = None
+        self.save_responder_name()
+        log_event("app_closed")
+        self.db.close()
+        flush_logs(timeout=0.5)
+        self.destroy()
+
+
+
+
+def main() -> None:
+    app = FamdToolApp()
+    app.mainloop()
