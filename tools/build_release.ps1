@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
-$Version = "1.1.0"
+$Version = "1.5.1"
 $AppName = "FAMDTool"
 $DistDir = Join-Path $Root "dist\$AppName"
 $ReleaseDir = Join-Path $Root "release"

@@ -1,6 +1,6 @@
 # FAMD Tool ni Yeol
 
-Version: 1.1.0
+Version: 1.5.1
 
 Simple Python desktop app for tracking EMS attendance, responses, vitals, and weekly manual attendance exports.
 
@@ -17,7 +17,10 @@ Simple Python desktop app for tracking EMS attendance, responses, vitals, and we
 - Ctrl+V in the log prompt attaches clipboard images, with a preview and remove button before saving.
 - Individual logs support a two-step Discord flow: `Copy Log Details` for text, then `Copy Image` for the first attached screenshot.
 - `config.cfg` can switch response/vitals entry between simple +/- counters and detailed log capture.
+- In simple mode, responses and vitals use compact side-by-side counters with direct number editing.
 - History window for opening saved and recent weekly data.
+- History window backup tools can export/import the current SQLite database and `config.cfg`.
+- Older saved weeks show `VIEWING OLD LOGS` and require confirmation before editing.
 - Export copies the weekly manual format to clipboard and saves a `.txt` file.
 - Verbose event logs are written asynchronously to `logs/`.
 - Startup update checks can download and run the latest GitHub Release installer.
@@ -65,8 +68,8 @@ Output:
 - `dist/FAMDTool/FAMDTool.exe`
 - `dist/FAMDTool/config.cfg`
 - `dist/FAMDTool/assets/FAMDTool.ico`
-- `release/FAMDTool-v1.1.0-windows.zip`
-- `release/FAMDTool-v1.1.0-windows-setup.exe`
+- `release/FAMDTool-v1.5.1-windows.zip`
+- `release/FAMDTool-v1.5.1-windows-setup.exe`
 
 The release uses a one-folder layout so `config.cfg`, `famd_data.sqlite3`, `attachments/`, `exports/`, and `logs/` stay beside the executable. This is intentional for operational deployments where the config may need to be edited without rebuilding the app.
 
@@ -111,6 +114,7 @@ $env:FAMD_RUN_GUI_TESTS='1'
 
 - Persistent app data is stored in `famd_data.sqlite3`.
 - Runtime settings are stored in `config.cfg`.
+- Database/config backups exported from History are saved as `FAMD_Backup_YYYYMMDD_HHMMSS_microseconds.zip` in `exports/`.
 - Copied/pasted log images are stored in `attachments/`.
 - Exported attendance text files are saved in `exports/`.
 - Verbose app event logs are saved in `logs/`.

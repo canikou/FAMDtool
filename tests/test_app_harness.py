@@ -1,10 +1,11 @@
 import sqlite3
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import famd_tool
+import famdtool.main_window as main_window
 from famdtool import config
 from famd_tool import (
     DATE_FMT,
@@ -20,6 +21,7 @@ from famd_tool import (
     parse_image_paths,
     serialize_image_paths,
 )
+from famdtool.time_utils import week_start_for
 
 
 class AppHarness:
@@ -33,6 +35,22 @@ class AppHarness:
 
     def export_text(self) -> str:
         return FamdToolApp.build_export_text(self.app)
+
+
+class FakeStringVar:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def get(self) -> str:
+        return self.value
+
+    def set(self, value: str) -> None:
+        self.value = value
+
+
+class FakeResponderVar:
+    def get(self) -> str:
+        return "Yeol"
 
 
 class DatabaseAndExportHarnessTests(unittest.TestCase):
@@ -259,6 +277,66 @@ class DatabaseAndExportHarnessTests(unittest.TestCase):
             self.assertIsNone(db.delete_latest_log_for_day("response", date(2026, 6, 13)))
             self.assertEqual(db.list_logs_for_day("response", date(2026, 6, 13)), [])
             db.close()
+
+    def test_direct_counter_edit_adds_or_removes_blank_logs(self):
+        with TemporaryDirectory() as temp_dir:
+            db = FamdDatabase(Path(temp_dir) / "test.sqlite3")
+            today = date.today()
+            app = object.__new__(FamdToolApp)
+            app.db = db
+            app.selected_day = today
+            app.week_start = week_start_for(date.today())
+            app.old_week_edit_confirmed = False
+            app.responder_name_var = FakeResponderVar()
+            app.refresh = lambda: None
+
+            FamdToolApp.commit_simple_log_count(app, "response", FakeStringVar("3"))
+            self.assertEqual(len(db.list_logs_for_day("response", today)), 3)
+
+            FamdToolApp.commit_simple_log_count(app, "response", FakeStringVar("1"))
+            self.assertEqual(len(db.list_logs_for_day("response", today)), 1)
+            db.close()
+
+    def test_direct_counter_edit_rejects_bad_values_without_changing_count(self):
+        with TemporaryDirectory() as temp_dir:
+            db = FamdDatabase(Path(temp_dir) / "test.sqlite3")
+            today = date.today()
+            db.add_blank_log("vital", today, "Yeol")
+            app = object.__new__(FamdToolApp)
+            app.db = db
+            app.selected_day = today
+            app.week_start = week_start_for(date.today())
+            app.old_week_edit_confirmed = False
+            app.responder_name_var = FakeResponderVar()
+            app.refresh = lambda: None
+
+            original_showerror = main_window.messagebox.showerror
+            main_window.messagebox.showerror = lambda *args, **kwargs: None
+            try:
+                variable = FakeStringVar("bad")
+                FamdToolApp.commit_simple_log_count(app, "vital", variable)
+
+                self.assertEqual(variable.get(), "1")
+                self.assertEqual(len(db.list_logs_for_day("vital", today)), 1)
+            finally:
+                main_window.messagebox.showerror = original_showerror
+                db.close()
+
+    def test_old_week_edit_confirmation_is_only_requested_once(self):
+        app = object.__new__(FamdToolApp)
+        app.week_start = week_start_for(date.today()) - timedelta(days=7)
+        app.old_week_edit_confirmed = False
+        prompts: list[str] = []
+
+        original_askyesno = main_window.messagebox.askyesno
+        main_window.messagebox.askyesno = lambda *args, **kwargs: prompts.append("asked") or True
+        try:
+            self.assertTrue(FamdToolApp.confirm_editing_selected_history(app))
+            self.assertTrue(FamdToolApp.confirm_editing_selected_history(app))
+        finally:
+            main_window.messagebox.askyesno = original_askyesno
+
+        self.assertEqual(prompts, ["asked"])
 
 
 class UserInputEdgeCaseTests(unittest.TestCase):

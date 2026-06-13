@@ -17,7 +17,7 @@ CONFIG_PATH = BASE_DIR / "config.cfg"
 _DEFAULT_CONFIG = {
     "app": {
         "title": "FAMD Tool ni Yeol",
-        "version": "1.1.0",
+        "version": "1.5.1",
         "default_responders": "Yeol Bakunawa",
     },
     "paths": {

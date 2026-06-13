@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from .attachments import parse_image_paths
+from .backup import export_app_backup, import_app_backup
 from .config import (
     APP_TITLE,
+    CONFIG_PATH,
     DATE_FMT,
     DB_PATH,
     DEFAULT_RESPONDERS,
@@ -56,6 +59,7 @@ class FamdToolApp(tk.Tk):
             value=self.db.get_setting("responder_name", DEFAULT_RESPONDERS)
         )
         self.refresh_job: str | None = None
+        self.old_week_edit_confirmed = False
         self._build_style()
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -133,7 +137,9 @@ class FamdToolApp(tk.Tk):
         style.configure("Section.TLabel", font=("Segoe UI", 11, "bold"))
         style.configure("StatusOn.TLabel", foreground="#0a7a35", font=("Segoe UI", 11, "bold"))
         style.configure("StatusOff.TLabel", foreground="#9b1c1c", font=("Segoe UI", 11, "bold"))
+        style.configure("StatusOld.TLabel", foreground="#8a5a00", font=("Segoe UI", 11, "bold"))
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"))
+        style.configure("CounterNumber.TEntry", font=("Segoe UI", 18, "bold"), justify="center")
         style.configure("Selected.TButton", background="#3f5f8f", foreground="white")
         style.map(
             "Selected.TButton",
@@ -189,54 +195,37 @@ class FamdToolApp(tk.Tk):
         lists = ttk.Frame(self, padding=(18, 0, 18, 8))
         lists.grid(row=4, column=0, sticky="nsew")
         lists.columnconfigure(0, weight=1)
-        lists.rowconfigure((1, 3, 5), weight=1)
 
         self.shift_list = self._build_list_section(
             lists, 0, "SAVED SHIFTS", "Edit Shifts", self.open_shift_manager
         )
         self.shift_list.bind("<Double-1>", lambda _event: self.open_shift_manager())
-        response_button_text = "Detailed Off" if NON_DETAILED_LOGS else "Edit Responses"
-        self.response_list = self._build_list_section(
-            lists, 2, "ROBBERY/DISTRESS RESPONSES", response_button_text, self.open_response_manager
-        )
-        self.response_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("response"))
-        vital_button_text = "Detailed Off" if NON_DETAILED_LOGS else "Edit Vitals"
-        self.vital_list = self._build_list_section(
-            lists, 4, "VITALS LOGS", vital_button_text, self.open_vital_manager
-        )
-        self.vital_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("vital"))
+        if NON_DETAILED_LOGS:
+            lists.rowconfigure(1, weight=1)
+            lists.rowconfigure(2, weight=0)
+            self._build_simple_counter_panel(lists, 2)
+        else:
+            lists.rowconfigure((1, 3, 5), weight=1)
+            self.response_list = self._build_list_section(
+                lists, 2, "ROBBERY/DISTRESS RESPONSES", "Edit Responses", self.open_response_manager
+            )
+            self.response_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("response"))
+            self.vital_list = self._build_list_section(
+                lists, 4, "VITALS LOGS", "Edit Vitals", self.open_vital_manager
+            )
+            self.vital_list.bind("<Double-1>", lambda _event: self.open_main_log_detail("vital"))
 
         actions = ttk.Frame(self, padding=(18, 6, 18, 16))
         actions.grid(row=5, column=0, sticky="ew")
-        column_count = 6 if NON_DETAILED_LOGS else 4
+        column_count = 2 if NON_DETAILED_LOGS else 4
         actions.columnconfigure(tuple(range(column_count)), weight=1)
         self.time_button = ttk.Button(
             actions, text="TIME IN", style="Primary.TButton", command=self.toggle_shift
         )
         self.time_button.grid(row=0, column=0, padx=4, sticky="ew")
         if NON_DETAILED_LOGS:
-            ttk.Button(
-                actions,
-                text="+ RESPONSE",
-                command=lambda: self.adjust_simple_log("response", 1),
-            ).grid(row=0, column=1, padx=4, sticky="ew")
-            ttk.Button(
-                actions,
-                text="- RESPONSE",
-                command=lambda: self.adjust_simple_log("response", -1),
-            ).grid(row=0, column=2, padx=4, sticky="ew")
-            ttk.Button(
-                actions,
-                text="+ VITAL",
-                command=lambda: self.adjust_simple_log("vital", 1),
-            ).grid(row=0, column=3, padx=4, sticky="ew")
-            ttk.Button(
-                actions,
-                text="- VITAL",
-                command=lambda: self.adjust_simple_log("vital", -1),
-            ).grid(row=0, column=4, padx=4, sticky="ew")
             ttk.Button(actions, text="EXPORT", command=self.export_week).grid(
-                row=0, column=5, padx=4, sticky="ew"
+                row=0, column=1, padx=4, sticky="ew"
             )
         else:
             ttk.Button(actions, text="ADD ROBBERY", command=self.add_response).grid(
@@ -269,6 +258,41 @@ class FamdToolApp(tk.Tk):
         listbox.configure(yscrollcommand=scrollbar.set)
         return listbox
 
+    def _build_simple_counter_panel(self, parent: ttk.Frame, row: int) -> None:
+        panel = ttk.Frame(parent, padding=(0, 16, 0, 8))
+        panel.grid(row=row, column=0, sticky="nsew")
+        panel.columnconfigure((0, 1), weight=1)
+        self.response_count_var = tk.StringVar(value="0")
+        self.vital_count_var = tk.StringVar(value="0")
+        self._build_counter_group(panel, 0, "RESPONSES", "response", self.response_count_var)
+        self._build_counter_group(panel, 1, "VITALS", "vital", self.vital_count_var)
+
+    def _build_counter_group(
+        self, parent: ttk.Frame, column: int, label: str, kind: str, variable: tk.StringVar
+    ) -> None:
+        group = ttk.Frame(parent, padding=10)
+        group.grid(row=0, column=column, sticky="nsew", padx=8)
+        group.columnconfigure(1, weight=1)
+        ttk.Label(group, text=label, style="Section.TLabel", anchor="center").grid(
+            row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8)
+        )
+        ttk.Button(group, text="<<", width=5, command=lambda: self.adjust_simple_log(kind, -1)).grid(
+            row=1, column=0, sticky="e", padx=(0, 8)
+        )
+        count_entry = ttk.Entry(
+            group,
+            textvariable=variable,
+            style="CounterNumber.TEntry",
+            justify="center",
+            width=8,
+        )
+        count_entry.grid(row=1, column=1, sticky="ew")
+        count_entry.bind("<Return>", lambda _event: self.commit_simple_log_count(kind, variable))
+        count_entry.bind("<FocusOut>", lambda _event: self.commit_simple_log_count(kind, variable))
+        ttk.Button(group, text=">>", width=5, command=lambda: self.adjust_simple_log(kind, 1)).grid(
+            row=1, column=2, sticky="w", padx=(8, 0)
+        )
+
     def previous_day(self) -> None:
         index = (self.selected_day - self.week_start).days
         self.selected_day = self.week_start + timedelta(days=(index - 1) % 7)
@@ -298,10 +322,13 @@ class FamdToolApp(tk.Tk):
 
         active = self.db.get_active_shift()
         is_on_duty = active is not None
-        self.status_label.configure(
-            text="On Duty" if is_on_duty else "Off Duty",
-            style="StatusOn.TLabel" if is_on_duty else "StatusOff.TLabel",
-        )
+        if self.is_viewing_old_week():
+            self.status_label.configure(text="VIEWING OLD LOGS", style="StatusOld.TLabel")
+        else:
+            self.status_label.configure(
+                text="On Duty" if is_on_duty else "Off Duty",
+                style="StatusOn.TLabel" if is_on_duty else "StatusOff.TLabel",
+            )
         self.time_button.configure(text="TIME OUT" if is_on_duty else "TIME IN")
 
         week_end = self.week_start + timedelta(days=6)
@@ -344,23 +371,22 @@ class FamdToolApp(tk.Tk):
         if self.shift_list.size() == 0:
             self.shift_list.insert("end", "- No saved shifts")
 
-        self.response_list.delete(0, "end")
         self.response_entries = self.db.list_logs_for_day("response", self.selected_day)
-        if NON_DETAILED_LOGS and self.response_entries:
-            self.response_list.insert("end", f"- Total response logs: {len(self.response_entries)}")
-        else:
-            for entry in self.response_entries:
-                self.response_list.insert("end", self.log_display_text(entry))
+        self.vital_entries = self.db.list_logs_for_day("vital", self.selected_day)
+        if NON_DETAILED_LOGS:
+            self.response_count_var.set(str(len(self.response_entries)))
+            self.vital_count_var.set(str(len(self.vital_entries)))
+            return
+
+        self.response_list.delete(0, "end")
+        for entry in self.response_entries:
+            self.response_list.insert("end", self.log_display_text(entry))
         if self.response_list.size() == 0:
             self.response_list.insert("end", "- No responses")
 
         self.vital_list.delete(0, "end")
-        self.vital_entries = self.db.list_logs_for_day("vital", self.selected_day)
-        if NON_DETAILED_LOGS and self.vital_entries:
-            self.vital_list.insert("end", f"- Total vital logs: {len(self.vital_entries)}")
-        else:
-            for entry in self.vital_entries:
-                self.vital_list.insert("end", self.log_display_text(entry))
+        for entry in self.vital_entries:
+            self.vital_list.insert("end", self.log_display_text(entry))
         if self.vital_list.size() == 0:
             self.vital_list.insert("end", "- No vitals")
 
@@ -371,6 +397,13 @@ class FamdToolApp(tk.Tk):
         return report_total_minutes(self.db, start_day, end_day)
 
     def toggle_shift(self) -> None:
+        if self.is_viewing_old_week():
+            messagebox.showinfo(
+                "Viewing old logs",
+                "Time In/Out is only available on the current week. Open the current week to clock in or out.",
+                parent=self,
+            )
+            return
         active = self.db.get_active_shift()
         now = local_now()
         log_event(
@@ -405,6 +438,8 @@ class FamdToolApp(tk.Tk):
         self.open_log_dialog("vital", VITAL_TYPES, "Add Vitals")
 
     def adjust_simple_log(self, kind: str, delta: int) -> None:
+        if not self.confirm_editing_selected_history():
+            return
         try:
             if delta > 0:
                 self.db.add_blank_log(kind, self.selected_day, self.get_responder_name())
@@ -423,7 +458,52 @@ class FamdToolApp(tk.Tk):
         )
         self.refresh()
 
+    def commit_simple_log_count(self, kind: str, variable: tk.StringVar) -> str:
+        current = len(self.db.list_logs_for_day(kind, self.selected_day))
+        raw_value = variable.get().strip()
+        if not raw_value:
+            variable.set(str(current))
+            return "break"
+        try:
+            value = int(raw_value)
+        except ValueError:
+            variable.set(str(current))
+            messagebox.showerror("Counter error", "Use a whole number for the counter.", parent=self)
+            return "break"
+        if value < 0:
+            variable.set(str(current))
+            messagebox.showerror("Counter error", "Counter cannot be lower than zero.", parent=self)
+            return "break"
+        if value == current:
+            variable.set(str(current))
+            return "break"
+        if not self.confirm_editing_selected_history():
+            variable.set(str(current))
+            return "break"
+        try:
+            if value > current:
+                for _ in range(value - current):
+                    self.db.add_blank_log(kind, self.selected_day, self.get_responder_name())
+            else:
+                for _ in range(current - value):
+                    self.db.delete_latest_log_for_day(kind, self.selected_day)
+        except ValueError as exc:
+            messagebox.showerror("Counter error", str(exc), parent=self)
+            variable.set(str(current))
+            return "break"
+        log_event(
+            "simple_log_counter_set",
+            kind=kind,
+            selected_day=self.selected_day.strftime(DATE_FMT),
+            old_count=current,
+            new_count=value,
+        )
+        self.refresh()
+        return "break"
+
     def open_log_dialog(self, kind: str, options: tuple[str, ...], title: str) -> None:
+        if not self.confirm_editing_selected_history():
+            return
         log_event(
             "log_dialog_requested",
             kind=kind,
@@ -452,9 +532,32 @@ class FamdToolApp(tk.Tk):
         self.db.set_setting("responder_name", self.get_responder_name())
         return "break"
 
+    def is_viewing_old_week(self) -> bool:
+        return self.week_start != week_start_for(date.today())
+
+    def confirm_editing_selected_history(self) -> bool:
+        if not self.is_viewing_old_week() or self.old_week_edit_confirmed:
+            return True
+        week_end = self.week_start + timedelta(days=6)
+        confirmed = messagebox.askyesno(
+            "Edit old logs?",
+            (
+                "You are viewing old logs.\n\n"
+                f"Selected week: {format_short_date(self.week_start)} - {format_short_date(week_end)}\n\n"
+                "Edit this saved week anyway? I will only ask once until the app is restarted."
+            ),
+            parent=self,
+        )
+        if confirmed:
+            self.old_week_edit_confirmed = True
+            log_event("old_week_edit_confirmed", week_start=self.week_start.strftime(DATE_FMT))
+        else:
+            log_event("old_week_edit_cancelled", week_start=self.week_start.strftime(DATE_FMT))
+        return confirmed
+
     def open_history(self) -> None:
         log_event("window_opened", window="history", week_start=self.week_start.strftime(DATE_FMT))
-        HistoryWindow(self, self.db, self.select_week)
+        HistoryWindow(self, self.db, self.select_week, self.export_backup, self.import_backup)
 
     def select_week(self, week_start: date) -> None:
         self.week_start = week_start
@@ -511,6 +614,7 @@ class FamdToolApp(tk.Tk):
             self.refresh,
             self.refresh,
             self.get_responder_name,
+            self.confirm_editing_selected_history,
         )
 
     def log_display_text(self, entry: LogEntry) -> str:
@@ -557,6 +661,61 @@ class FamdToolApp(tk.Tk):
 
     def build_export_text(self) -> str:
         return build_weekly_export_text(self.db, self.week_start)
+
+    def export_backup(self) -> None:
+        try:
+            result = export_app_backup(DB_PATH, CONFIG_PATH, EXPORT_DIR)
+        except (OSError, ValueError) as exc:
+            log_event("backup_export_failed", error=str(exc))
+            messagebox.showerror("Backup failed", str(exc), parent=self)
+            return
+        messagebox.showinfo(
+            "Backup exported",
+            f"Saved configuration and database backup to:\n{result.path}",
+            parent=self,
+        )
+
+    def import_backup(self) -> None:
+        archive = filedialog.askopenfilename(
+            title="Import FAMD backup",
+            filetypes=(("FAMD backup", "*.zip"), ("All files", "*.*")),
+            parent=self,
+        )
+        if not archive:
+            return
+        if not messagebox.askyesno(
+            "Import backup?",
+            (
+                "Importing a backup will replace the current database and config.cfg.\n\n"
+                "A copy of the current database will be kept beside it before import. Continue?"
+            ),
+            parent=self,
+        ):
+            return
+        try:
+            self.save_responder_name()
+            self.db.close()
+            restore_path = import_app_backup(Path(archive), DB_PATH, CONFIG_PATH)
+            self.db = FamdDatabase(DB_PATH)
+            self.responder_name_var.set(self.db.get_setting("responder_name", DEFAULT_RESPONDERS))
+            self.week_start = week_start_for(date.today())
+            self.selected_day = date.today()
+            self.old_week_edit_confirmed = False
+            self.refresh()
+        except (OSError, ValueError) as exc:
+            self.db = FamdDatabase(DB_PATH)
+            log_event("backup_import_failed", error=str(exc))
+            messagebox.showerror("Import failed", str(exc), parent=self)
+            return
+        messagebox.showinfo(
+            "Backup imported",
+            (
+                "Imported database and config.cfg.\n\n"
+                f"Previous database copy:\n{restore_path}\n\n"
+                "Restart the app to apply any imported config changes."
+            ),
+            parent=self,
+        )
 
     def on_close(self) -> None:
         if self.refresh_job:

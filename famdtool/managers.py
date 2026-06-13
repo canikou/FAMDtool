@@ -98,6 +98,8 @@ class ShiftManager(tk.Toplevel):
         default_end = datetime.combine(self.day, time(13, 0))
         dialog = ShiftDialog(self, "Add Shift", Shift(0, default_start, default_end))
         if dialog.result_data:
+            if not self.confirm_editing_selected_history():
+                return
             start, end = dialog.result_data
             if end is None and self.db.get_active_shift():
                 log_event(
@@ -141,6 +143,8 @@ class ShiftManager(tk.Toplevel):
             return
         dialog = ShiftDialog(self, "Edit Shift", shift)
         if dialog.result_data:
+            if not self.confirm_editing_selected_history():
+                return
             try:
                 start, end = dialog.result_data
                 self.db.update_shift(shift.id, start, end)
@@ -159,10 +163,16 @@ class ShiftManager(tk.Toplevel):
         shift = self.selected_shift()
         if not shift:
             return
+        if not self.confirm_editing_selected_history():
+            return
         if messagebox.askyesno("Delete shift", "Delete selected shift?", parent=self):
             self.db.delete_shift(shift.id)
             self.refresh()
             self.on_change()
+
+    def confirm_editing_selected_history(self) -> bool:
+        confirmer = getattr(self.parent, "confirm_editing_selected_history", None)
+        return True if confirmer is None else bool(confirmer())
 
 
 class LogManager(tk.Toplevel):
@@ -336,6 +346,8 @@ class LogManager(tk.Toplevel):
             default_responders=self.parent.get_responder_name(),
         )
         if dialog.result_data:
+            if not self.confirm_editing_selected_history():
+                return
             self.db.add_log(self.kind, *dialog.result_data)
             self.set_day_from_result(dialog.result_data)
             self.refresh()
@@ -354,6 +366,8 @@ class LogManager(tk.Toplevel):
             self.parent.get_responder_name(),
         )
         if dialog.result_data:
+            if not self.confirm_editing_selected_history():
+                return
             self.db.update_log(entry.id, *dialog.result_data)
             self.set_day_from_result(dialog.result_data)
             self.refresh()
@@ -375,6 +389,7 @@ class LogManager(tk.Toplevel):
             self.refresh,
             self.on_change,
             self.parent.get_responder_name,
+            self.confirm_editing_selected_history,
         )
 
     def copy_selected_log(self) -> None:
@@ -394,10 +409,16 @@ class LogManager(tk.Toplevel):
         entry = self.selected_entry()
         if not entry:
             return
+        if not self.confirm_editing_selected_history():
+            return
         if messagebox.askyesno("Delete entry", "Delete selected entry?", parent=self):
             self.db.delete_log(entry.id)
             self.refresh()
             self.on_change()
+
+    def confirm_editing_selected_history(self) -> bool:
+        confirmer = getattr(self.parent, "confirm_editing_selected_history", None)
+        return True if confirmer is None else bool(confirmer())
 
     def open_selected_image(self) -> None:
         entry = self.selected_entry()
@@ -443,6 +464,7 @@ class LogDetailWindow(tk.Toplevel):
         manager_refresh,
         app_refresh,
         responder_name_getter,
+        edit_confirmer=None,
     ) -> None:
         super().__init__(parent)
         self.parent = parent
@@ -453,6 +475,7 @@ class LogDetailWindow(tk.Toplevel):
         self.manager_refresh = manager_refresh
         self.app_refresh = app_refresh
         self.responder_name_getter = responder_name_getter
+        self.edit_confirmer = edit_confirmer
         self.preview_image: tk.PhotoImage | None = None
         self.title("Log Details")
         self.geometry("620x620")
@@ -535,6 +558,8 @@ class LogDetailWindow(tk.Toplevel):
             self.responder_name_getter(),
         )
         if dialog.result_data:
+            if not self.confirm_editing_selected_history():
+                return
             self.db.update_log(self.entry.id, *dialog.result_data)
             self.manager_refresh()
             self.app_refresh()
@@ -597,12 +622,17 @@ class LogDetailWindow(tk.Toplevel):
         messagebox.showerror("Image copy failed", str(exc), parent=self)
 
     def delete_log(self) -> None:
+        if not self.confirm_editing_selected_history():
+            return
         if not messagebox.askyesno("Delete log", "Delete this log?", parent=self):
             return
         self.db.delete_log(self.entry.id)
         self.manager_refresh()
         self.app_refresh()
         self.destroy()
+
+    def confirm_editing_selected_history(self) -> bool:
+        return True if self.edit_confirmer is None else bool(self.edit_confirmer())
 
     def open_image(self) -> None:
         image_paths = parse_image_paths(self.entry.image_path)
@@ -636,11 +666,20 @@ class LogDetailWindow(tk.Toplevel):
 
 
 class HistoryWindow(tk.Toplevel):
-    def __init__(self, parent: FamdToolApp, db: FamdDatabase, on_select) -> None:
+    def __init__(
+        self,
+        parent: FamdToolApp,
+        db: FamdDatabase,
+        on_select,
+        on_export_backup,
+        on_import_backup,
+    ) -> None:
         super().__init__(parent)
         self.parent = parent
         self.db = db
         self.on_select = on_select
+        self.on_export_backup = on_export_backup
+        self.on_import_backup = on_import_backup
         self.title("History")
         self.geometry("640x380")
         log_event("history_window_opened")
@@ -673,6 +712,12 @@ class HistoryWindow(tk.Toplevel):
         buttons = ttk.Frame(self, padding=(12, 0, 12, 12))
         buttons.grid(row=1, column=0, sticky="ew")
         ttk.Button(buttons, text="Open Selected Week", command=self.open_selected).pack(side="left")
+        ttk.Button(buttons, text="Export Database", command=self.on_export_backup).pack(
+            side="left", padx=(8, 0)
+        )
+        ttk.Button(buttons, text="Import Database", command=self.on_import_backup).pack(
+            side="left", padx=(8, 0)
+        )
         ttk.Button(buttons, text="Close", command=self.destroy).pack(side="right")
 
     def refresh(self) -> None:
